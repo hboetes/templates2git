@@ -1,0 +1,34 @@
+#! /bin/zsh -e
+
+USER="api"
+PASS="apipassword"
+FOREMAN_URL="https://george.foreman/api"
+
+if ! command -v jq > /dev/null 2>&1; then
+    echo "Download this program: apt-get install jq"
+fi
+
+apicall(){
+    curl -s -k -u $USER:$PASS $FOREMAN_URL/$1
+}
+
+getjson(){
+    curl -s -k -u $USER:$PASS "$FOREMAN_URL/$1?per_page=10000"
+}
+
+for template in provisioning_templates ptables; do
+    if [[ ! -d $template ]]; then
+        mkdir $template || { echo error creating directory >&2 ; exit 1 }
+    fi
+    json_file=${template}.json
+    getjson $template > $json_file
+    # Nice off by one
+    total=$(($(jq -r '.total' < $json_file) - 1))
+    for i in {0..$total}; do
+        name=$(jq -r ".results[$i].name" < $json_file)
+        id=$(jq -r ".results[$i].id" < $json_file)
+        echo "Fetching file '$name' with id '$id' in directory $template"
+        apicall $template/$id/export > $template/"$name"
+    done
+    rm $json_file
+done
